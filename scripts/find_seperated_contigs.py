@@ -4,6 +4,7 @@ import argparse
 import os
 import gzip
 from collections import defaultdict
+from __future__ import annotations
 
 agp           = ''
 seqs_file     = ''
@@ -13,12 +14,63 @@ contig_names  = dict() # contig -> contig name [OPTIONAL]
 reverse_names = dict() # contig name -> contig [OPTIONAL]
 valid_pairs   = set() 
 names_file    = ''
+nodes         = dict() # contig -> Node
 
 class Contig:
     def __init__(self, name: str):
         self.name   = name
         self.dir_5p = defaultdict(int) # how many reads support
         self.dir_3p = defaultdict(int) # either the 5' or 3' directions
+
+class Node:
+    def __init__(self, name: str, placement: str, index: int):
+        self.name       = name
+        self.ref_seq    = placement
+        self.idx        = index
+        self.right      = list()
+        self.left       = list()
+        self.right_node = None
+        self.left_node  = None
+
+    def add_edge(self, node: Node, support: int, side: int) -> int:
+        if (side == 0):
+            self.left.append((node, support))
+        else:
+            self.right.append((node, support))
+
+        return 0
+
+    def assign_most_supported(self) -> int:
+
+        # func() to assign the most supported nodes to
+        # as the left & right neighbors
+
+        cur   = None
+        score = -float("inf")
+        for i in range(len(self.left)):
+            entry = self.left[i]
+            node  = entry[0]
+            val   = entry[1]
+            if (val > score):
+                cur   = node
+                score = val
+
+        self.left = cur # if none, it will remain as none
+
+        # repeat for right side
+        cur   = None
+        score = -float("inf")
+        for i in range(len(self.right)):
+            entry = self.right[i]
+            node  = entry[0]
+            val   = entry[1]
+            if (val > score):
+                cur   = node
+                score = val
+
+        self.right = cur
+
+        return 0
 
 def set_arguments() -> int:
     """get & set the arguments"""
@@ -162,10 +214,17 @@ def find_agreements() -> int:
 
     return 0
 
+def create_components() -> int:
+    """function to iterate through all the nodes and construct components out of them"""
+
+    # TODO
+
+    return 0
+
 def identify_separations() -> int:
     """now check the pairings that are separated"""
 
-    global agp_map, contig_map, valid_pairs, reverse_names
+    global agp_map, contig_map, valid_pairs, reverse_names, nodes
 
     total = 0
     ofh   = open("Separated_contigs.tsv", 'w')
@@ -196,6 +255,14 @@ def identify_separations() -> int:
                         name1 = reverse_names[name1]
                     if (name2 in reverse_names):
                         name2 = reverse_names[name2]
+                if (name1 not in nodes):
+                    nodes[name1] = Node(name1, source, idx)
+                if (name2 not in nodes):
+                    nodes[name2] = Node(name2, cntg_src, cntg_idx)
+
+                node1 = nodes[name1]
+                node2 = nodes[name2]
+                node1.add_edge(node2, cntg_cnt, 0) # add to left
                 outline = f"{name1}\t{source}\t{idx}\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
                 ofh.write(outline)
                 total += 1
@@ -217,6 +284,13 @@ def identify_separations() -> int:
                         name1 = reverse_names[name1]
                     if (name2 in reverse_names):
                         name2 = reverse_names[name2]
+                if (name1 not in nodes):
+                    nodes[name1] = Node(name1, source, idx)
+                if (name2 not in nodes):
+                    nodes[name2] = Node(name2, cntg_src, cntg_idx)
+                node1 = nodes[name1]
+                node2 = nodes[name2]
+                node1.add_edge(node2, cntg_cnt, 1) # add to right
                 outline = f"{name1}\t{source}\t{idx}\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
                 ofh.write(outline)
                 total += 1
