@@ -268,7 +268,8 @@ def create_components() -> int:
 
     fh = open("Connected.contigs.tsv", 'w')
     fh.write("#Component.ID\tNum.Contigs\tContig.IDs\n")
-    # step 3, testing printing the components
+
+    # step 3, write and print to the console  the components
     for i, component in enumerate(components):
         temp = list()
         
