@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import os
 import gzip
-import copy
 from collections import defaultdict
 
 agp           = ''
