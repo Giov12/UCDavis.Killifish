@@ -1,10 +1,11 @@
 #!/bin/env python3
 
+from __future__ import annotations
 import argparse
 import os
 import gzip
+import copy
 from collections import defaultdict
-from __future__ import annotations
 
 agp           = ''
 seqs_file     = ''
@@ -38,7 +39,7 @@ class Node:
         else:
             self.right.append((node, support))
 
-        return 0
+        return 0  
 
     def assign_most_supported(self) -> int:
 
@@ -55,7 +56,7 @@ class Node:
                 cur   = node
                 score = val
 
-        self.left = cur # if none, it will remain as none
+        self.left_node = cur # if none, it will remain as none
 
         # repeat for right side
         cur   = None
@@ -68,9 +69,20 @@ class Node:
                 cur   = node
                 score = val
 
-        self.right = cur
+        self.right_node = cur
 
         return 0
+    
+    def __eq__(self, node: Node) -> bool:
+        if (isinstance(node, Node) == False):
+            return False
+        return self.name == node.name
+    
+    def __hash__(self) -> int:
+        return hash(self.name)
+    
+    def __repr__(self) -> str:
+        return f"{self.name}_{self.ref_seq}_{self.idx}"
 
 def set_arguments() -> int:
     """get & set the arguments"""
@@ -217,8 +229,61 @@ def find_agreements() -> int:
 def create_components() -> int:
     """function to iterate through all the nodes and construct components out of them"""
 
-    # TODO
+    global nodes
 
+    # 
+    # step 1: get nodes with no left neighbors
+    #
+    no_lefts = list()
+    for node in nodes.values():
+        node.assign_most_supported() # establish any neighbors
+        if (node.left_node == None):
+            no_lefts.append(node)
+
+    if (len(no_lefts) == 0):
+        print("Found no usuable contigs to start bridging contigs")
+        return 1
+
+    #
+    # step 2: go through each node from
+    # left to right & verify that they
+    # are the most supported matches
+    #
+    components = list()
+    for node in no_lefts:
+        component = node
+        cur       = component
+        next      = component.right_node
+        size      = 1
+        components.append(cur)
+        while (next != None):
+            if (next.left_node == cur):
+                cur = next
+                next = cur.right_node
+                size += 1
+            else:
+                cur.right_node = None # break the connection
+                break
+        # print("Added a component of size", size)
+
+    fh = open("Connected.contigs.tsv", 'w')
+    fh.write("#Component.ID\tNum.Contigs\tContig.IDs\n")
+    # step 3, testing printing the components
+    for i, component in enumerate(components):
+        temp = list()
+        
+        while (component != None):
+            temp.append(repr(component))
+            component = component.right_node
+        size = len(temp)
+        pstr = ' '.join(temp) # print string
+        wstr = pstr.replace(' ', ',') # write string
+        print("Component", i, f"Size: {size}")
+        print(pstr, '\n')
+        fh.write(f"{i}\t{size}\t{wstr}\n")
+
+    fh.close()
+    
     return 0
 
 def identify_separations() -> int:
@@ -248,13 +313,15 @@ def identify_separations() -> int:
                 continue
             cntg_src, cntg_idx = agp_map[left_cntg]
             if (cntg_src != source or abs(idx - cntg_idx) > 1):
+                name1 = contig.name
+                name2 = left_cntg
+                # check if we need to update the contig names
                 if (check):
-                    name1 = contig.name
-                    name2 = left_cntg
                     if (name1 in reverse_names):
                         name1 = reverse_names[name1]
                     if (name2 in reverse_names):
                         name2 = reverse_names[name2]
+                # create nodes to construct components later
                 if (name1 not in nodes):
                     nodes[name1] = Node(name1, source, idx)
                 if (name2 not in nodes):
@@ -277,9 +344,9 @@ def identify_separations() -> int:
                 continue
             cntg_src, cntg_idx = agp_map[right_cntg]
             if (cntg_src != source or abs(idx - cntg_idx) > 1):
+                name1 = contig.name
+                name2 = right_cntg
                 if (check):
-                    name1 = contig.name
-                    name2 = right_cntg
                     if (name1 in reverse_names):
                         name1 = reverse_names[name1]
                     if (name2 in reverse_names):
@@ -320,6 +387,9 @@ def main() -> int:
 
     # now sieve through the pairings and placements
     identify_separations()
+
+    # now connect the seperations
+    create_components()
 
     return 0
 
