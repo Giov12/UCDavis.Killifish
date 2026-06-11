@@ -255,7 +255,7 @@ def create_components() -> int:
         cur       = component
         next      = component.right_node
         size      = 1
-        components.append(cur)
+        components.append(cur) # this is the head node
         while (next != None):
             if (next.left_node == cur):
                 cur = next
