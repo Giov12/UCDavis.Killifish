@@ -149,12 +149,13 @@ def write_seqs() -> int:
             entries2 = [ends2[0], ends2[1], rev1_2, rev2_2]
             for k, entry in enumerate(entries):
                 for m, entry2 in enumerate(entries2):
-                    new_entry = entry + entry2 + '\n'
+                    new_entry = entry + entry2
                     lab1      = labels[k]
                     lab2      = labels[m]
                     header    = f">{rec.id}_{lab1}_{rec2.id}_{lab2}\n"
                     fh.write(header)
                     fh.write(textwrap.fill(new_entry, width=60))
+                    fh.write('\n')
                     total    += 1
 
     fh.close()
@@ -162,7 +163,6 @@ def write_seqs() -> int:
     print(f"Wrote a total of {total} records")
 
     return 0
-
 
 def main() -> int:
     """Entry point to this small program"""
