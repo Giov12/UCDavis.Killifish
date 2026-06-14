@@ -132,7 +132,7 @@ def write_seqs() -> int:
 
     fh     = open("concatenated.ends.fa", 'w')
     size   = 2_000_000
-    labels = ["5'", "3'", "5'_r", "3'_r"]
+    labels = ["5p", "3p", "5p_r", "3p_r"]
     total  = 0 
 
     for i in range(len(seqs) - 1):
