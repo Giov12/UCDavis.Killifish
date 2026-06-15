@@ -179,7 +179,7 @@ def main() -> int:
     # read in the sequence records
     load_fasta()
 
-    # write out the ends
+    # combine and write the concatenated ends
     write_seqs()
 
     return 0
