@@ -157,7 +157,12 @@ def write_seqs() -> int:
                     fh.write(header)
                     fh.write(textwrap.fill(new_entry, width=60))
                     fh.write('\n')
-                    total    += 1
+                    new_entry = entry2 + gap + entry
+                    header    = f">{rec2.id}_{lab2}_{rec.id}_{lab1}\n"
+                    fh.write(header)
+                    fh.write(textwrap.fill(new_entry, width=60))
+                    fh.write('\n')
+                    total    += 2
 
     fh.close()
 
