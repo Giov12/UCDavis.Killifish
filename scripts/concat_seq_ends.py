@@ -134,6 +134,7 @@ def write_seqs() -> int:
     size   = 2_000_000
     labels = ["5p", "3p", "5p_r", "3p_r"]
     total  = 0 
+    gap    = 'N' * 100
 
     for i in range(len(seqs) - 1):
         rec  = seqs[i]
@@ -149,7 +150,7 @@ def write_seqs() -> int:
             entries2 = [ends2[0], ends2[1], rev1_2, rev2_2]
             for k, entry in enumerate(entries):
                 for m, entry2 in enumerate(entries2):
-                    new_entry = entry + entry2
+                    new_entry = entry + gap + entry2
                     lab1      = labels[k]
                     lab2      = labels[m]
                     header    = f">{rec.id}_{lab1}_{rec2.id}_{lab2}\n"
