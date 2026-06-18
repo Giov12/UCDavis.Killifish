@@ -16,6 +16,11 @@ valid_pairs   = set()
 names_file    = ''
 nodes         = dict() # contig -> Node
 
+
+#
+# TODO: restruct the code where we do not require primary alignments on both ends of
+# a sequence in order to merge them
+#
 class Contig:
     def __init__(self, name: str):
         self.name   = name
