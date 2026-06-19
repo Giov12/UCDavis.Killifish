@@ -275,7 +275,8 @@ find_edge_primaries(const string &bamfile, unordered_map<string, uint> &chrom_le
                     }
                 }
                 if (same == false){
-                    ofh << read << '\t' << parts[2] << '\t';
+                    char dir = d == 1 ? '5' : '3';
+                    ofh << read << '\t' << parts[2] << '_' << dir << '\t';
                     int count = 0, total = secondaries[read].size();
                     for (int i = 0; i < total; i++){
                         count++;
