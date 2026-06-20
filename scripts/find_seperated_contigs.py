@@ -16,16 +16,18 @@ valid_pairs   = set()
 names_file    = ''
 nodes         = dict() # contig -> Node
 
-
-#
-# TODO: restruct the code where we do not require primary alignments on both ends of
-# a sequence in order to merge them
-#
 class Contig:
     def __init__(self, name: str):
         self.name   = name
-        self.dir_5p = defaultdict(int) # how many reads support
-        self.dir_3p = defaultdict(int) # either the 5' or 3' directions
+        self.dir_5p = {} # how many reads support
+        self.dir_3p = {} # either the 5' or 3' directions
+
+        # struct
+        # direction map = {3: {cntg: count, cntg: count}, 5: {cntg: count, cntg: count}}
+        #
+        for d in ['3', '5']:
+            self.dir_3p[d] = defaultdict(int)
+            self.dir_5p[d] = defaultdict(int)
 
 class Node:
     def __init__(self, name: str, placement: str, index: int):
@@ -129,17 +131,18 @@ def parse_edges() -> int:
     for line in fh:
         if (len(line) == 0 or line[0] == '#'):
             continue
-        fields = line.strip().split('\t')
-        pcntg  = fields[1] # primary contig/alignment
+        fields    = line.strip().split('\t')
+        pcntg_aln = fields[1] # primary contig/alignment
+        pcntg, pside = pcntg_aln.split('_')
         if (pcntg not in contig_map):
             contig_map[pcntg] = Contig(pcntg)
         for scntg in fields[2].split(','):
             cntg = scntg[:-2]
             side = scntg[-1]
-            if (side == '5'):
-                contig_map[pcntg].dir_5p[cntg] += 1
+            if (pside == '5'):
+                contig_map[pcntg].dir_5p[side][cntg] += 1
             else:
-                contig_map[pcntg].dir_3p[cntg] += 1
+                contig_map[pcntg].dir_3p[side][cntg] += 1
 
     fh.close()
 
@@ -291,15 +294,15 @@ def create_components() -> int:
     
     return 0
 
-def identify_separations() -> int:
-    """now check the pairings that are separated"""
+def write_support() -> int:
+    """a function to write the number of briding alignments"""
 
     global agp_map, contig_map, valid_pairs, reverse_names, nodes
 
     total = 0
     ofh   = open("Separated_contigs.tsv", 'w')
     check = len(reverse_names) > 0
-    ofh.write("#Contig.A\tChr.A\tIdx.A\tConitg.B\tChr.B\tIdx.B\tEdge\tRead.Support\n")
+    ofh.write("#Contig.A\tChr.A\tIdx.A\tDirection\tConitg.B\tChr.B\tIdx.B\tEdge\tRead.Support\n")
 
     for contig in contig_map.values():
         source, idx  = agp_map[contig.name]
