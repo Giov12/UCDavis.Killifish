@@ -37,13 +37,19 @@ class Node:
         self.right      = list()
         self.left       = list()
         self.right_node = None
+        self.right_orie = '' # orientation of right node
         self.left_node  = None
+        self.left_orie  = '' # orientation of left node
 
-    def add_edge(self, node: Node, support: int, side: int) -> int:
-        if (side == 0):
-            self.left.append((node, support))
+    def add_edge(self, node: Node, support: int, self_side: int, other_side: str) -> int:
+        #
+        # other side -> 5' or 3' side of the other contig
+        #
+        
+        if (self_side == 0):
+            self.left.append((node, support, other_side))
         else:
-            self.right.append((node, support))
+            self.right.append((node, support, other_side))
 
         return 0  
 
@@ -54,6 +60,7 @@ class Node:
 
         cur   = None
         score = -float("inf")
+        orien = ''
         for i in range(len(self.left)):
             entry = self.left[i]
             node  = entry[0]
@@ -61,12 +68,15 @@ class Node:
             if (val > score):
                 cur   = node
                 score = val
+                orien = entry[2]
 
         self.left_node = cur # if none, it will remain as none
+        self.left_orie = orien
 
         # repeat for right side
         cur   = None
         score = -float("inf")
+        orien = ''
         for i in range(len(self.right)):
             entry = self.right[i]
             node  = entry[0]
@@ -74,8 +84,10 @@ class Node:
             if (val > score):
                 cur   = node
                 score = val
+                orien = entry[2]
 
         self.right_node = cur
+        self.right_orie = orien
 
         return 0
     
@@ -294,84 +306,76 @@ def create_components() -> int:
     
     return 0
 
+
 def write_support() -> int:
     """a function to write the number of briding alignments"""
 
     global agp_map, contig_map, valid_pairs, reverse_names, nodes
 
-    total = 0
     ofh   = open("Separated_contigs.tsv", 'w')
     check = len(reverse_names) > 0
-    ofh.write("#Contig.A\tChr.A\tIdx.A\tDirection\tConitg.B\tChr.B\tIdx.B\tEdge\tRead.Support\n")
+    dirs  = ['5', '3']
+    ofh.write("#Contig.A\tChr.A\tIdx.A\tSide.A\tConitg.B\tChr.B\tIdx.B\tSide.B\tRead.Support\n")
 
     for contig in contig_map.values():
         source, idx  = agp_map[contig.name]
-        five_primes  = [(cntg, count) for cntg, count in contig.dir_5p.items()]
-        three_primes = [(cntg, count) for cntg, count in contig.dir_3p.items()]
-        five_primes.sort(key = lambda x : x[1], reverse=True)
-        three_primes.sort(key = lambda x : x[1], reverse=True)
-        d = "5'" # direction
-        for pair in five_primes:
-            left_cntg = pair[0]
-            cntg_cnt  = pair[1] # number of reads supporting this match
-            tmp       = [contig.name, left_cntg]
-            tmp.sort()
-            combo     = tuple(tmp)
-            if (combo not in valid_pairs):
-                continue
-            cntg_src, cntg_idx = agp_map[left_cntg]
-            if (cntg_src != source or abs(idx - cntg_idx) > 1):
-                name1 = contig.name
-                name2 = left_cntg
-                # check if we need to update the contig names
-                if (check):
-                    if (name1 in reverse_names):
-                        name1 = reverse_names[name1]
-                    if (name2 in reverse_names):
-                        name2 = reverse_names[name2]
-                # create nodes to construct components later
-                if (name1 not in nodes):
-                    nodes[name1] = Node(name1, source, idx)
-                if (name2 not in nodes):
-                    nodes[name2] = Node(name2, cntg_src, cntg_idx)
+        for d in dirs:
+            five_primes  = [(cntg, count) for cntg, count in contig.dir_5p[d].items()]
+            three_primes = [(cntg, count) for cntg, count in contig.dir_3p[d].items()]
+            five_primes.sort(key = lambda x : x[1], reverse=True)
+            three_primes.sort(key = lambda x : x[1], reverse=True)
+        
+            for pair in five_primes:
+                left_cntg = pair[0]
+                cntg_cnt  = pair[1] # number of reads supporting this match
+                cntg_src, cntg_idx = agp_map[left_cntg]
+                if (cntg_src != source or abs(idx - cntg_idx) > 1):
+                    name1 = contig.name
+                    name2 = left_cntg
+                    # check if we need to update the contig names
+                    if (check):
+                        if (name1 in reverse_names):
+                            name1 = reverse_names[name1]
+                        if (name2 in reverse_names):
+                            name2 = reverse_names[name2]
+                    # create nodes to construct components later
+                    if (name1 not in nodes):
+                        nodes[name1] = Node(name1, source, idx)
+                    if (name2 not in nodes):
+                        nodes[name2] = Node(name2, cntg_src, cntg_idx)
+                    outline = f"{name1}\t{source}\t{idx}\t5\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
+                    ofh.write(outline)
 
-                node1 = nodes[name1]
-                node2 = nodes[name2]
-                node1.add_edge(node2, cntg_cnt, 0) # add to left
-                outline = f"{name1}\t{source}\t{idx}\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
-                ofh.write(outline)
-                total += 1
-        d = "3'" # direction
-        for pair in three_primes:
-            right_cntg = pair[0]
-            cntg_cnt   = pair[1] # number of reads supporting this match
-            tmp        = [contig.name, right_cntg]
-            tmp.sort()
-            combo      = tuple(tmp)
-            if (combo not in valid_pairs):
-                continue
-            cntg_src, cntg_idx = agp_map[right_cntg]
-            if (cntg_src != source or abs(idx - cntg_idx) > 1):
-                name1 = contig.name
-                name2 = right_cntg
-                if (check):
-                    if (name1 in reverse_names):
-                        name1 = reverse_names[name1]
-                    if (name2 in reverse_names):
-                        name2 = reverse_names[name2]
-                if (name1 not in nodes):
-                    nodes[name1] = Node(name1, source, idx)
-                if (name2 not in nodes):
-                    nodes[name2] = Node(name2, cntg_src, cntg_idx)
-                node1 = nodes[name1]
-                node2 = nodes[name2]
-                node1.add_edge(node2, cntg_cnt, 1) # add to right
-                outline = f"{name1}\t{source}\t{idx}\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
-                ofh.write(outline)
-                total += 1
+                    node1 = nodes[name1]
+                    node2 = nodes[name2]
+                    node1.add_edge(node2, cntg_cnt, 0, d) # add to left
+            
+            for pair in three_primes:
+                right_cntg = pair[0]
+                cntg_cnt   = pair[1] # number of reads supporting this match
+                cntg_src, cntg_idx = agp_map[right_cntg]
+                if (cntg_src != source or abs(idx - cntg_idx) > 1):
+                    name1 = contig.name
+                    name2 = right_cntg
+                    # check if we need to update the contig names
+                    if (check):
+                        if (name1 in reverse_names):
+                            name1 = reverse_names[name1]
+                        if (name2 in reverse_names):
+                            name2 = reverse_names[name2]
+                    # create nodes to construct components later
+                    if (name1 not in nodes):
+                        nodes[name1] = Node(name1, source, idx)
+                    if (name2 not in nodes):
+                        nodes[name2] = Node(name2, cntg_src, cntg_idx)
+                    outline = f"{name1}\t{source}\t{idx}\t3\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
+                    ofh.write(outline)
+
+                    node1 = nodes[name1]
+                    node2 = nodes[name2]
+                    node1.add_edge(node2, cntg_cnt, 1, d) # add to right
 
     ofh.close()
-    print(f"Found a total of {total} separations")
 
     return 0
 
@@ -393,8 +397,10 @@ def main() -> int:
     # find reciprocal matches
     find_agreements()
 
-    # now sieve through the pairings and placements
-    identify_separations()
+    # write support if requested
+    # TODO -> make this into a parameter
+    if (True):
+        write_support()
 
     # now connect the seperations
     create_components()
