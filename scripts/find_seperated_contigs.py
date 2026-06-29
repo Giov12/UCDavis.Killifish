@@ -36,6 +36,8 @@ class Node:
         self.idx        = index
         self.right      = list()
         self.left       = list()
+        self._lefts     = list() # to hold onto equally supported nodes
+        self._rights    = list() # hold onto equally supported nodes
         self.right_node = None
         self.right_orie = '' # orientation of right node
         self.left_node  = None
@@ -58,36 +60,36 @@ class Node:
         # func() to assign the most supported nodes to
         # as the left & right neighbors
 
-        cur   = None
         score = -float("inf")
-        orien = ''
+        lefts = list()
         for i in range(len(self.left)):
             entry = self.left[i]
-            node  = entry[0]
             val   = entry[1]
-            if (val > score):
-                cur   = node
+            if (i == 0):
                 score = val
-                orien = entry[2]
+            if (val == score):
+                lefts.append(entry)
+            elif (val > score):
+                lefts.clear()
+                lefts.append(entry)
 
-        self.left_node = cur # if none, it will remain as none
-        self.left_orie = orien
+        self._lefts.extend(lefts)
 
         # repeat for right side
-        cur   = None
-        score = -float("inf")
-        orien = ''
+        score  = -float("inf")
+        rights = list()
         for i in range(len(self.right)):
             entry = self.right[i]
-            node  = entry[0]
             val   = entry[1]
-            if (val > score):
-                cur   = node
+            if (i == 0):
                 score = val
-                orien = entry[2]
+            if (val == score):
+                rights.append(entry)
+            else:
+                rights.clear()
+                rights.append(entry)
 
-        self.right_node = cur
-        self.right_orie = orien
+        self._rights.extend(entry)
 
         return 0
     
