@@ -55,7 +55,7 @@ class Node:
 
         return 0  
 
-    def assign_most_supported(self) -> int:
+    def find_most_supported(self) -> int:
 
         # func() to assign the most supported nodes to
         # as the left & right neighbors
@@ -89,9 +89,14 @@ class Node:
                 rights.clear()
                 rights.append(entry)
 
-        self._rights.extend(entry)
+        self._rights.extend(rights)
 
         return 0
+    
+    def no_left_neighbors(self) -> bool:
+        return len(self._lefts) == 0
+    
+    def get_lefts()
     
     def __eq__(self, node: Node) -> bool:
         if (isinstance(node, Node) == False):
@@ -217,35 +222,6 @@ def load_agp() -> int:
 
     return 0
 
-def find_agreements() -> int:
-    """find neighboring contigs that show reciprocity"""
-
-    global contig_map, valid_pairs
-
-    for contig_1 in contig_map.values():
-        # this contig is on the 5', so contig_1 should be on 3'
-        for contig2_name in contig_1.dir_5p.keys():
-            if (contig2_name in contig_map):
-                contig_2 = contig_map[contig2_name]
-                if (contig_1.name in contig_2.dir_3p):
-                    tmp  = [contig_1.name, contig2_name]
-                    tmp.sort()
-                    pair = tuple(tmp)
-                    if (pair not in valid_pairs):
-                        valid_pairs.add(pair)
-
-        # this contig is on the 3', so contig_1 should be on 5'
-        for contig2_name in contig_1.dir_3p.keys():
-            if (contig2_name in contig_map):
-                contig_2 = contig_map[contig2_name]
-                if (contig_1.name in contig_2.dir_5p):
-                    tmp  = [contig_1.name, contig2_name]
-                    tmp.sort()
-                    pair = tuple(tmp)
-                    if (pair not in valid_pairs):
-                        valid_pairs.add(pair)
-
-    return 0
 
 def create_components() -> int:
     """function to iterate through all the nodes and construct components out of them"""
@@ -258,7 +234,7 @@ def create_components() -> int:
     no_lefts = list()
     for node in nodes.values():
         node.assign_most_supported() # establish any neighbors
-        if (node.left_node == None):
+        if (node.no_left_neighbors()):
             no_lefts.append(node)
 
     if (len(no_lefts) == 0):
@@ -274,7 +250,6 @@ def create_components() -> int:
     for node in no_lefts:
         component = node
         cur       = component
-        next      = component.right_node
         size      = 1
         components.append(cur) # this is the head node
         while (next != None):
@@ -309,7 +284,7 @@ def create_components() -> int:
     return 0
 
 
-def write_support() -> int:
+def create_edges_and_write_support() -> int:
     """a function to write the number of briding alignments"""
 
     global agp_map, contig_map, valid_pairs, reverse_names, nodes
@@ -396,15 +371,10 @@ def main() -> int:
     # load the agp file
     load_agp()
 
-    # find reciprocal matches
-    find_agreements()
+    # create the edges and write it out for inspection later
+    create_edges_and_write_support()
 
-    # write support if requested
-    # TODO -> make this into a parameter
-    if (True):
-        write_support()
-
-    # now connect the seperations
+    # now connect edges
     create_components()
 
     return 0
