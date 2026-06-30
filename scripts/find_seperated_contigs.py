@@ -154,8 +154,8 @@ def parse_edges() -> int:
     for line in fh:
         if (len(line) == 0 or line[0] == '#'):
             continue
-        fields    = line.strip().split('\t')
-        pcntg_aln = fields[1] # primary contig/alignment
+        fields       = line.strip().split('\t')
+        pcntg_aln    = fields[1] # primary contig/alignment
         pcntg, pside = pcntg_aln.split('_')
         if (pcntg not in contig_map):
             contig_map[pcntg] = Contig(pcntg)
@@ -263,11 +263,11 @@ def find_best_right_neighbor(node: Node) -> tuple[Node, str]:
     right_nodes = node.get_rights()
 
     for entry in right_nodes:
-        right_node = entry[0]
-        support    = entry[1]
+        right_node  = entry[0]
+        support     = entry[1]
         right_orien = entry[2]
         right_node  = nodes[right_node.name]
-        matched    = False
+        matched     = False
         for other_entries in right_node.get_lefts():
             if (other_entries[0].name == node.name):
                 matched = True
@@ -311,7 +311,7 @@ def create_components() -> int:
     for node in no_lefts:
         component = [(node, '')]
         cur       = node
-        visited    = set()
+        visited   = set()
         visited.add(node.name)
         while (True):
             # now to get best match to the 3' regions
