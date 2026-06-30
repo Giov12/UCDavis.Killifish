@@ -57,7 +57,7 @@ class Node:
 
     def find_most_supported(self) -> int:
 
-        # func() to assign the most supported nodes to
+        # func() to assign the most supported nodes
         # as the left & right neighbors
 
         score = -float("inf")
@@ -85,7 +85,7 @@ class Node:
                 score = val
             if (val == score):
                 rights.append(entry)
-            else:
+            elif (val > score):
                 rights.clear()
                 rights.append(entry)
 
@@ -96,7 +96,11 @@ class Node:
     def no_left_neighbors(self) -> bool:
         return len(self._lefts) == 0
     
-    def get_lefts()
+    def get_lefts(self) -> list[tuple[Node, int, str]]:
+        return self._lefts
+    
+    def get_rights(self) -> list[tuple, None, int, str]:
+        return self._rights
     
     def __eq__(self, node: Node) -> bool:
         if (isinstance(node, Node) == False):
@@ -222,6 +226,64 @@ def load_agp() -> int:
 
     return 0
 
+def find_best_left_neighbor(node: Node) -> tuple[Node, str]:
+    """find the most supported node on the 5' region"""
+
+    global nodes
+
+    left_nodes = node.get_lefts()
+
+    for entry in left_nodes:
+        left_node  = entry[0]
+        support    = entry[1]
+        left_orien = entry[2]
+        left_node  = nodes[left_node.name]
+        matched    = False
+        for other_entries in left_node.get_lefts():
+            if (other_entries[0].name == node.name):
+                matched = True
+                break
+        if (matched):
+            return (left_node, left_orien)
+        if (matched == False):
+            for other_entries in left_node.get_rights():
+                if (other_entries[0].name == node.name):
+                    matched = True
+                    break
+        if (matched):
+            return (left_node, left_orien)
+
+    return None  
+
+def find_best_right_neighbor(node: Node) -> tuple[Node, str]:
+    """find the most supported node on the 5' region"""
+
+    global nodes
+
+    right_nodes = node.get_rights()
+
+    for entry in right_nodes:
+        right_node = entry[0]
+        support    = entry[1]
+        right_orien = entry[2]
+        right_node  = nodes[right_node.name]
+        matched    = False
+        for other_entries in right_node.get_lefts():
+            if (other_entries[0].name == node.name):
+                matched = True
+                break
+        if (matched):
+            return (right_node, right_orien)
+        if (matched == False):
+            for other_entries in right_node.get_rights():
+                if (other_entries[0].name == node.name):
+                    matched = True
+                    break
+        if (matched):
+            return (right_node, right_orien)
+
+    return None
+
 
 def create_components() -> int:
     """function to iterate through all the nodes and construct components out of them"""
@@ -233,7 +295,7 @@ def create_components() -> int:
     #
     no_lefts = list()
     for node in nodes.values():
-        node.assign_most_supported() # establish any neighbors
+        node.find_most_supported() # establish any neighbors
         if (node.no_left_neighbors()):
             no_lefts.append(node)
 
@@ -248,32 +310,26 @@ def create_components() -> int:
     #
     components = list()
     for node in no_lefts:
-        component = node
-        cur       = component
-        size      = 1
-        components.append(cur) # this is the head node
-        while (next != None):
-            if (next.left_node == cur):
-                cur = next
-                next = cur.right_node
-                size += 1
-            else:
-                cur.right_node = None # break the connection
+        component = [node]
+        cur       = node
+        while (True):
+            # now to get best match to the 3' regions
+            next_neighbor = find_best_right_neighbor(cur)
+            if (next_neighbor == None):
                 break
-        # print("Added a component of size", size)
+            next_node  = next_neighbor[0]
+            next_orien = next_neighbor[1]
+            component.append(next_node)
+            cur        = next_node
+        components.append(component)
 
     fh = open("Connected.contigs.tsv", 'w')
     fh.write("#Component.ID\tNum.Contigs\tContig.IDs\n")
 
     # step 3, write and print to the console  the components
     for i, component in enumerate(components):
-        temp = list()
-        
-        while (component != None):
-            temp.append(repr(component))
-            component = component.right_node
-        size = len(temp)
-        pstr = ' '.join(temp) # print string
+        size = len(component)
+        pstr = ' '.join(repr(node) for node in component) # print string
         wstr = pstr.replace(' ', ',') # write string
         print("Component", i, f"Size: {size}")
         print(pstr, '\n')
