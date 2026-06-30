@@ -284,7 +284,6 @@ def find_best_right_neighbor(node: Node) -> tuple[Node, str]:
 
     return None
 
-
 def create_components() -> int:
     """function to iterate through all the nodes and construct components out of them"""
 
@@ -310,8 +309,10 @@ def create_components() -> int:
     #
     components = list()
     for node in no_lefts:
-        component = [node]
+        component = [(node, '')]
         cur       = node
+        visited    = set()
+        visited.add(node.name)
         while (True):
             # now to get best match to the 3' regions
             next_neighbor = find_best_right_neighbor(cur)
@@ -319,7 +320,10 @@ def create_components() -> int:
                 break
             next_node  = next_neighbor[0]
             next_orien = next_neighbor[1]
-            component.append(next_node)
+            if (next_node.name in visited):
+                break
+            component.append((next_node, next_orien))
+            visited.add(next_node.name)
             cur        = next_node
         components.append(component)
 
@@ -329,8 +333,10 @@ def create_components() -> int:
     # step 3, write and print to the console  the components
     for i, component in enumerate(components):
         size = len(component)
-        pstr = ' '.join(repr(node) for node in component) # print string
-        wstr = pstr.replace(' ', ',') # write string
+        if (size == 1):
+            continue
+        pstr = ' '.join(f"{repr(node)}({orien if orien else 'start'})" for node, orien in component)
+        wstr = ','.join(f"{repr(node)}:{orien if orien else 'start'}" for node, orien in component)
         print("Component", i, f"Size: {size}")
         print(pstr, '\n')
         fh.write(f"{i}\t{size}\t{wstr}\n")
@@ -338,7 +344,6 @@ def create_components() -> int:
     fh.close()
     
     return 0
-
 
 def create_edges_and_write_support() -> int:
     """a function to write the number of briding alignments"""
