@@ -5,8 +5,9 @@ import os
 import gzip
 import textwrap
 
-fasta = ''
-seqs  = list()
+fasta   = ''
+seqs    = list()
+targets = set()
 
 # create once
 rc_dict = {'A':'T',
@@ -41,9 +42,28 @@ class Record:
         first  = self.seq[:length]
         second = self.seq[-length:]
         return (first, second)
+    
+def load_targets(tfile: str) -> int:
+    """load in the targets"""
+
+    global targets
+
+    assert os.path.isfile(tfile), f"Could not locate file {tfile}"
+
+    fh = open(tfile, 'r')
+
+    for line in fh:
+        line = line.strip()
+        targets.add(line)
+
+    fh.close()
+
+    print(f"Loaded {len(targets)} target IDs")
+
+    return 0
 
 def set_arguments() -> int:
-    """get the fasta file"""
+    """get the fasta file and optional targets"""
 
     global fasta
 
@@ -51,12 +71,17 @@ def set_arguments() -> int:
 
     parser = argparse.ArgumentParser(description = d)
     parser.add_argument("-f", "--fasta", help="fasta file", required=True, type=str, default='')
+    parser.add_argument("-t", "--targets", help="optional list to only read in selected sequences from the fasta file", type=str, default='')
 
     args  = parser.parse_args()
     fasta = args.fasta
+    tfile = args.targets
   
     assert os.path.isfile(fasta), f"Could not locate file {fasta}"
-
+    
+    if (tfile != ''):
+        load_targets(tfile)
+        
     return 0
 
 def get_header_id(header: str) -> str:
@@ -75,7 +100,7 @@ def get_header_id(header: str) -> str:
 def load_fasta() -> int:
     """load the sequence records into memory"""
 
-    global fasta, seqs
+    global fasta, seqs, targets
 
     fh     = gzip.open(fasta, "rt") if fasta.endswith(".gz") else open(fasta, 'r')
     curRec = ''
@@ -89,12 +114,18 @@ def load_fasta() -> int:
         if (line[0] == '>'):
             if (curRec == ''):
                 curRec = get_header_id(line)
+                if (len(targets) > 0):
+                    if (curRec not in targets):
+                        curRec = ''
             else:
                 rec = Record(curRec)
                 rec.seq = ''.join(seq)
                 seqs.append(rec)
                 seq.clear()
                 curRec = get_header_id(line)
+                if (len(targets) > 0):
+                    if (curRec not in targets):
+                        curRec = ''
 
         elif (curRec != ''):
             seq.append(line)
