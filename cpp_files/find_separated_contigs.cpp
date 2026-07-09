@@ -34,9 +34,9 @@ struct ntLink_Align {
 int
 parse_tabular(string &line, vector<string> &parts){
 
-    int start = 0, end = 0;
+    int start = 0, end = 0, n = line.size();
 
-    while (end < line.size()){
+    while (end < n){
         if (line[end] == '\t'){
             parts.emplace_back(line.substr(start, end - start));
             start = end + 1;
@@ -44,7 +44,7 @@ parse_tabular(string &line, vector<string> &parts){
         end++;
     }
 
-    if (start < line.size()){
+    if (start < n){
         parts.emplace_back(line.substr(start));
     }
 
@@ -74,13 +74,13 @@ parse_cigar(string &cigar){
     char first = '\0', last = '\0';
     const int size = 1000;
 
-    int p = 0, length;
+    int p = 0, n = cigar.size(), length;
     char c;
     string lstr; // length string
     bool clipped = false;
     bool large_align = false;
 
-    while (p < cigar.size()){
+    while (p < n){
         if (std::isdigit(cigar[p])){
             lstr += cigar[p];
         }
