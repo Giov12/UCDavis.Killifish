@@ -157,7 +157,7 @@ find_separated_contigs(const string &bamfile, unordered_map<string, vector<ntLin
                 bool informative = parse_cigar(cigar);
                 if (informative){
                     char dir = reverse_strand(parts[1]) ? 'r' : 'f';
-                    int pos  = static_cast<uint>(std::stoi(parts[3]));
+                    uint pos  = static_cast<uint>(std::stoi(parts[3]));
                     ntLink_Align nt;
                     nt.contig    = parts[2];
                     nt.direction = dir;
