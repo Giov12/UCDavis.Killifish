@@ -1,5 +1,5 @@
 //
-// parse a bam file to find scaffolded contigs separated across a different scaffolded assembly
+// parse a bam file to find scaffolded contigs from ntLink separated across a different scaffolded assembly
 // originating from the same underlying data
 //
 
@@ -25,8 +25,9 @@ using std::cerr;
 
 typedef unsigned int uint;
 
-struct edge_alignment {
+struct ntLink_Align {
     string contig;
+    uint   pos;
     char   direction;
 };
 
@@ -65,17 +66,19 @@ check_for_index(const string& bamfile){
     return file_exists(bamfile + ".bai") || file_exists(bamfile + ".csi");
 }
 
-int
-at_edge(string &pos, string &cigar, const uint &chrom_length){
+bool
+parse_cigar(string &cigar){
+
+    // determine if this cigar indicates that this alignment could work
 
     char first = '\0', last = '\0';
-    int length = 0, from_start = 0, from_end = 0;
-    int align_pos = std::stoi(pos);
-    int cumulative = align_pos;
+    const int size = 10000;
 
-    int p  = 0;
+    int p = 0, length;
     char c;
     string lstr; // length string
+    bool clipped = false;
+    bool large_align = false;
 
     while (p < cigar.size()){
         if (std::isdigit(cigar[p])){
@@ -86,55 +89,42 @@ at_edge(string &pos, string &cigar, const uint &chrom_length){
                 length = std::stoi(lstr);
                 c      = cigar[p];
                 lstr.clear();
-                if (first == '\0'){
-                    first      = c;
-                    last       = c;
-                    from_start = length;
-                    from_end   = length;
-                }
-                else {
-                    last     = c;
-                    from_end = length;
-                }
-                if (c != 'I' && c != 'S' && c != 'H'){
-                    cumulative += length;
+                if (length >= size){
+                    if (c == 'H'){
+                        clipped = true;
+                    }
+                    else if (c == 'M'){
+                        large_align = true;
+                    }
                 }
             }
         }
         p++;
     }
 
-    //
-    // now check if the first or last characters are clippings
-    //
+    return large_align && clipped;
 
-    if (first == 'S' || first == 'H'){
-        if ((align_pos - from_start) < 0){
-            return 1; // left
-        }
-    }
-    if (last == 'S' || last == 'H'){
-        if (cumulative + from_end > chrom_length){
-            return 2; // right
-        }
-    }
-
-    return 0; // neither
 }
 
 bool
-is_unmapped(vector<string> &parts){
-    int flag = std::stoi(parts[1]);
+is_unmapped(const string &flag){
+    int flag_int = std::stoi(flag);
 
-    return flag & 0x4;
+    return flag_int & 0x4;
 }
 
+bool
+reverse_strand(const string &flag){
+    int flag_int = std::stoi(flag);
+
+    return (flag_int & 0x10) != 0;
+}
 
 int
-find_separated_contigs(const string &bamfile, unordered_map<string, vector<string>> &mappings){
+find_separated_contigs(const string &bamfile, unordered_map<string, vector<ntLink_Align>> &mappings){
     
     //
-    // collect the name of sequences with clips at the ends of the contigs
+    // find the ntLink scaffolds that map across different loci
     //
     string line;
     vector<string> parts;
@@ -157,33 +147,22 @@ find_separated_contigs(const string &bamfile, unordered_map<string, vector<strin
                 line.clear();
                 continue;
             }
-            if (parts.front() == "@SQ"){
-                get_sequence_length(parts, chrom_lengths);
-            }
-            else if (parts.front()[0] == '@' || is_unmapped(parts)){
+            else if (parts.front()[0] != 'n' || is_unmapped(parts[1])){
                 line.clear();
                 parts.clear();
                 continue;
             }
             else {
-                if (is_not_primary(parts)){
-                    uint d = at_edge(parts[3], parts[5], chrom_lengths[parts[2]]);
-                    if (d != 0){
-                        string read = parts[0];
-                        bool   add  = true;
-                        for (int i = 0; i < secondaries[read].size(); i++){
-                            if (secondaries[read][i].contig == parts[2]){
-                                // these two have already been matched
-                                add = false;
-                                break;
-                            }
-                        }
-                        if (add){
-                            char dir = d == 1 ? '5' : '3';
-                            edge_alignment p = {parts[2], dir};
-                            secondaries[read].push_back(p);
-                        }
-                    }
+                string cigar     = parts[5];
+                bool informative = parse_cigar(cigar);
+                if (informative){
+                    char dir = reverse_strand(parts[1]) ? 'r' : 'f';
+                    int pos  = static_cast<uint>(std::stoi(parts[3]));
+                    ntLink_Align nt;
+                    nt.contig    = parts[2];
+                    nt.direction = dir;
+                    nt.pos       = pos;
+                    mappings[parts[0]].push_back(nt);
                 }
             }
             parts.clear();
@@ -199,6 +178,47 @@ find_separated_contigs(const string &bamfile, unordered_map<string, vector<strin
     return 0;
 }
 
+int
+write_mappings(unordered_map<string, vector<ntLink_Align>> &mappings){
+
+    //
+    // create the output stream to construct the file
+    //
+    std::ofstream ofh("Separated.Contigs.txt");
+
+    ofh << "#Contig.ID\tAlignments\n";
+
+    for (auto itr = mappings.begin(); itr != mappings.end(); itr++){
+        string scaffold           = itr->first;
+        vector<ntLink_Align> &nts = itr->second;
+
+        //
+        // sort the vector of nt alignments
+        //
+
+        std::sort(nts.begin(), nts.end(), []
+            (const ntLink_Align &a, const ntLink_Align &b){
+                if (a.contig != b.contig){
+                    return a.contig < b.contig; }
+                if (a.pos != b.pos){
+                    return a.pos < b.pos; }
+        });
+
+        ofh << scaffold << '\t';
+
+        int size = nts.size();
+        for (int i = 0; i < size; i++){
+            ntLink_Align &nt = nts[i];
+            char c = i == size - 1 ? '\n' : ',';
+            ofh << nt.contig << '_' << nt.pos << '_' << nt.direction << c;
+        }
+
+    } // end of itr
+
+    ofh.close();
+
+    return 0;
+}
 
 int
 main(int argc, char *args[]){
@@ -221,18 +241,16 @@ main(int argc, char *args[]){
     }
 
     //
-    // step 1: find sequences that are secondary & at an
-    // edge of a sequence
+    // step 1: find contigs that were mapped across multiple
+    // sequences
     //
-    unordered_map<string, uint> chrom_lengths;
-    unordered_map<string, vector<edge_alignment>> secondaries;
-    find_secondary_alignments(bamfile, chrom_lengths, secondaries);
+    unordered_map<string, vector<ntLink_Align>> mappings;
+    find_separated_contigs(bamfile, mappings);
 
     //
-    // step 2: find the primary sequences that are
-    // also at edges, but for different sequences
+    // step 2: write these out to a file
     //
-    find_edge_primaries(bamfile, chrom_lengths, secondaries);
+    write_mappings(mappings);
 
 
     return 0;
