@@ -72,7 +72,7 @@ parse_cigar(string &cigar){
     // determine if this cigar indicates that this alignment could work
 
     char first = '\0', last = '\0';
-    const int size = 10000;
+    const int size = 1000;
 
     int p = 0, length;
     char c;
@@ -90,7 +90,7 @@ parse_cigar(string &cigar){
                 c      = cigar[p];
                 lstr.clear();
                 if (length >= size){
-                    if (c == 'H'){
+                    if (c == 'H' || c == 'S'){
                         clipped = true;
                     }
                     else if (c == 'M'){
@@ -202,7 +202,10 @@ write_mappings(unordered_map<string, vector<ntLink_Align>> &mappings){
                     return a.contig < b.contig; }
                 if (a.pos != b.pos){
                     return a.pos < b.pos; }
-        });
+                else {
+                    return true;
+                }
+            });
 
         ofh << scaffold << '\t';
 
