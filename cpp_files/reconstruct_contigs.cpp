@@ -39,6 +39,12 @@ struct Part {
     uint8_t id;
     uint  start; // relative to the read
     uint  length;
+
+    //
+    // we need to define a constructor
+    //
+    Part(uint8_t id_, uint start_, uint length_) :
+        id(id_), start(start_), length(length_) {}
 };
 
 
@@ -132,8 +138,14 @@ public:
         
         if (nparts == 1){
             if (_parts[0].length >= this->size - threshold){
-                vector<Part> v = {_parts[0]};
-                this->_full_aligns.emplace_back(v);
+                vector<Align> v;
+                for (uint i = 0; i < this->_aligns.size(); i++){
+                    if (this->_aligns[i].id == _parts[0].id){
+                        v.push_back(this->_aligns[i]);
+                        break;
+                    }
+                }
+                this->_full_aligns.push_back(v);
             }
         }
 
@@ -190,7 +202,7 @@ public:
         //
         vector<Part> best_chain;
         for (int k = best_end; k != -1; k = best_from[k]){
-            best_chain.emplace_back(_parts[k]);
+            best_chain.push_back(_parts[k]);
         }
 
         std::reverse(best_chain.begin(), best_chain.end());
@@ -203,12 +215,12 @@ public:
             for (uint i = 0; i < best_chain.size(); i++){
                 for (uint j = 0; j < this->_aligns.size(); j++){
                     if (this->_aligns[j].id == best_chain[i].id){
-                        reconstruction.emplace_back(this->_aligns[i]);
+                        reconstruction.push_back(this->_aligns[i]);
                         break;
                     }
                 }
             }
-            this->_full_aligns.emplace_back(reconstruction);
+            this->_full_aligns.push_back(reconstruction);
         }
 
     }
