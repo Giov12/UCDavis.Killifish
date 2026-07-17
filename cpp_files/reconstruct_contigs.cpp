@@ -55,6 +55,45 @@ private:
     vector<vector<Align>> _full_aligns; // contains only alignments that can represent this full contig
     uint8_t               _count = 0;
 
+    void _extend_path(const vector<Part> &parts, uint dist, vector<Part> &current,
+                      uint current_len, vector<Part> &best_chain, uint &best_len){
+        
+        //
+        // recursive loop to reconstruct all possible
+        // paths
+        //
+
+        // is this the new best reconstruction?
+        if (current_len > best_len){
+            best_len   = current_len;
+            best_chain = current;
+        }  
+        
+        uint cur_end = current.back().start + current.back().length - 1;
+
+        uint lower_bound = cur_end > dist ? cur_end - dist : 0;
+
+        for (uint i = 0; i < parts.size(); i++){
+            bool used = false;
+            for (uint j = 0; j < current.size(); j++){
+                // do not include itself
+                if (current[j].id == parts[i].id){
+                    used = true;
+                    break;
+                }
+            }
+            if (used){
+                continue;
+            }
+            if (parts[i].start >= lower_bound && parts[i].start <= cur_end + dist){
+                current.push_back(parts[i]);
+                _extend_path(parts, dist, current, current_len + parts[i].length, best_chain, best_len);
+                current.pop_back(); // backtrack
+            }
+
+            }
+        }
+
 public:
 
     string name;
@@ -78,21 +117,23 @@ public:
         return this->_count;
     }
 
-
     void reconstruct(void){
         //
         // step 1: we need to construct parts
         //
         vector<Part> _parts;
-        const uint threshold = 500;
+        const uint threshold = 5000;
+        // cerr << "Size of " << this->name << " " << this->size << '\n';
 
         for (int i = 0; i < this->_aligns.size(); i++){
             Align &aln          = this->_aligns[i];
             const string &cigar = aln.cigar;
-            int  start          = -1;
             uint p = 0, n = cigar.size(), last_p = 0, size = 0, length = 0;
             string lstr; // string representation of the length
             char c;
+
+            uint leading_clip = 0, aligned_len = 0;
+            bool first_feature = true;
 
             while (p != n){
                 c = cigar[p];
@@ -100,36 +141,30 @@ public:
                     p++;
                 }
                 else {
-                    lstr  = cigar.substr(last_p, p - last_p);
-                    size  = stoi(lstr);
-                    if (start == -1){
-                        // first encounter of a feature
-                        if (c == 'H' || c == 'S'){
-                            if (aln.direction == 'R'){
-                                start = this->size - size;
-                            }
-                            else {
-                                start = size;
-                            }
-                            size = 0; // this does not contribute to the size of the part
-                        }
-                        // if first feature is a match
-                        else if (c == 'M'){
-                            start  = 1;
-                            length = size;
-                        }
+                    lstr = cigar.substr(last_p, p - last_p);
+                    size = stoi(lstr);
+                
+                    if (first_feature && (c == 'H' || c == 'S')){
+                        leading_clip = size;
                     }
                     else if (c == 'M' || c == 'I'){
-                        length += size;
+                        aligned_len += size;
                     }
-                    last_p = p + 1; // skip this char
+                    first_feature = false;
+                    last_p = p + 1;
                     p++;
                 }
             }
-            
-            // now create the part
-            _parts.emplace_back(aln.id, start, length);
-        } // end of i loop
+
+            int start;
+            if (aln.direction == 'R'){
+                start = this->size - leading_clip - aligned_len;
+            }
+            else {
+                start = leading_clip;
+            }
+            _parts.emplace_back(aln.id, start, aligned_len);
+        }
 
         //
         // step 2: try to reconstruct using adjacent parts to each other
@@ -160,63 +195,29 @@ public:
         //
         // now see if we can reconstruct a full alignment
         //
-        const uint   dist = 100;
-        vector<uint> best_len(nparts);
-        vector<int>  best_from(nparts, -1);
-
-        //
-        // this is a chaining problem, since we have a direction
-        // lowest start to highest start, but we need to be mindful
-        // of possible overlapping alignments
-        //
-
-        for (uint i = 0; i < nparts; i++){
-            best_len[i] = _parts[i].length; // initialize with its own length
-            for (uint j = 0; j < nparts; j++){
-                uint j_end = _parts[j].start + _parts[j].length - 1;
-                //
-                // ensure that the ith part comes after j ends in a reasonable dist
-                //
-                if (_parts[i].start >= j_end && _parts[i].start <= j_end + dist){
-                    uint candidate_len = best_len[j] + _parts[i].length;
-                    if (candidate_len > best_len[i]){
-                        best_len[i]   = candidate_len; // update the length
-                        best_from[i] = j;
-                    }
-                }
-            } // end of j
-        } // end of i
-
-        //
-        // step 3: find where the best chain ends
-        //
-        uint best_end = 0;
-        for (uint i = 1; i < nparts; i++){
-            if (best_len[i] > best_len[best_end]){
-                best_end = i;
-            }
-        }
-
-        // 
-        // step 4: go backwards to construct the best
-        // chain & then reverse it
-        //
+        const uint   dist = 1000;
+        uint     best_len = 0;
         vector<Part> best_chain;
-        for (int k = best_end; k != -1; k = best_from[k]){
-            best_chain.push_back(_parts[k]);
-        }
 
-        std::reverse(best_chain.begin(), best_chain.end());
+        //
+        // this will be a recursive function
+        //
+        for (uint i = 0; i < nparts; i++){
+            vector<Part> current = {_parts[i]};
+            _extend_path(_parts, dist, current, _parts[i].length, best_chain, best_len);
+        }
+   
 
         //
         // step 5: check if this is a full chain
         //
-        if (best_len[best_end] >= this->size - threshold){
+        if (best_len >= this->size - threshold){
             vector<Align> reconstruction;
             for (uint i = 0; i < best_chain.size(); i++){
-                for (uint j = 0; j < i; j++){
+                for (uint j = 0; j < this->_aligns.size(); j++){
                     if (this->_aligns[j].id == best_chain[i].id){
                         reconstruction.push_back(this->_aligns[j]);
+                        break;
                     }
                 }
             }
