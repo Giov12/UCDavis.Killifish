@@ -78,6 +78,7 @@ public:
         return this->_count;
     }
 
+
     void reconstruct(void){
         //
         // step 1: we need to construct parts
@@ -191,7 +192,7 @@ public:
         //
         uint best_end = 0;
         for (uint i = 1; i < nparts; i++){
-            if (best_len[i] == best_len[best_end]){
+            if (best_len[i] > best_len[best_end]){
                 best_end = i;
             }
         }
@@ -213,10 +214,9 @@ public:
         if (best_len[best_end] >= this->size - threshold){
             vector<Align> reconstruction;
             for (uint i = 0; i < best_chain.size(); i++){
-                for (uint j = 0; j < this->_aligns.size(); j++){
+                for (uint j = 0; j < i; j++){
                     if (this->_aligns[j].id == best_chain[i].id){
-                        reconstruction.push_back(this->_aligns[i]);
-                        break;
+                        reconstruction.push_back(this->_aligns[j]);
                     }
                 }
             }
@@ -446,7 +446,7 @@ write_mappings(vector<Scaffold> &mappings){
 
     ofh.close();
 
-    cerr << "Number of scaffolds that failed to reconstruct " << failed << '\n';
+    cerr << failed << " out of " << mappings.size() << " scaffolds failed to reconstruct\n";
 
     return 0;
 }
