@@ -386,6 +386,5 @@ main(int argc, char *args[]){
     //
     find_edge_primaries(bamfile, chrom_lengths, secondaries);
 
-
     return 0;
 }
