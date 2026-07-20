@@ -27,6 +27,11 @@ typedef unsigned int uint;
 struct edge_alignment {
     string contig;
     char   direction;
+    uint   length;
+
+    // define a constructor
+    edge_alignment(string cntg, char d, uint len) :
+        contig(cntg), direction(d), length(len) {}
 };
 
 int
@@ -121,13 +126,45 @@ at_edge(string &pos, string &cigar, const uint &chrom_length){
     return 0; // neither
 }
 
+uint
+get_query_length(const string &cigar, bool const primary){
+    //
+    // helper function to get the length of the alignment
+    //
+
+    uint p = 0, n = cigar.size(), last_p = 0, size = 0;
+    string lstr; // string representation of the length
+    char c;
+    const char o = primary ? 'S' : 'D';
+
+    uint aligned_len = 0;
+
+    while (p != n){
+        c = cigar[p];
+        if (isdigit(c)){
+            p++;
+        }
+        else {
+            if (c == 'M' || c == 'I' || c == o){
+                lstr = cigar.substr(last_p, p - last_p);
+                size = stoi(lstr);
+                aligned_len += size;
+            }
+            last_p = p + 1;
+            p++;
+        }
+    }
+
+    return aligned_len;
+}
+
 bool
-is_not_primary(vector<string> &parts){
+is_not_primary(const string &samflag){
     //
     // check if the alignment is not primary
     //
 
-    int flag = std::stoi(parts[1]);
+    int flag = std::stoi(samflag);
 
     if (flag & 0x100 || flag & 0x800){
         return true; }
@@ -136,8 +173,8 @@ is_not_primary(vector<string> &parts){
 }
 
 bool
-is_unmapped(vector<string> &parts){
-    int flag = std::stoi(parts[1]);
+is_unmapped(const string &samflag){
+    int flag = std::stoi(samflag);
 
     return flag & 0x4;
 }
@@ -187,27 +224,34 @@ find_secondary_alignments(const string &bamfile, unordered_map<string, uint> &ch
             if (parts.front() == "@SQ"){
                 get_sequence_length(parts, chrom_lengths);
             }
-            else if (parts.front()[0] == '@' || is_unmapped(parts)){
+            else if (parts.front()[0] == '@' || is_unmapped(parts[1])){
                 line.clear();
                 parts.clear();
                 continue;
             }
             else {
-                if (is_not_primary(parts)){
-                    uint d = at_edge(parts[3], parts[5], chrom_lengths[parts[2]]);
+                string samflag = parts[1];
+                string cigar   = parts[5];
+                if (is_not_primary(samflag)){
+                    uint d = at_edge(parts[3], cigar, chrom_lengths[parts[2]]);
                     if (d != 0){
-                        string read = parts[0];
-                        bool   add  = true;
+                        string   read = parts[0];
+                        bool      add = true;
+                        char      dir = d == 1 ? '5' : '3';
+                        uint algn_len = get_query_length(cigar, false);
                         for (int i = 0; i < secondaries[read].size(); i++){
                             if (secondaries[read][i].contig == parts[2]){
                                 // these two have already been matched
+                                if (secondaries[read][i].length < algn_len){
+                                    secondaries[read][i].length = algn_len;
+                                    secondaries[read][i].direction = dir;
+                                }
                                 add = false;
                                 break;
                             }
                         }
                         if (add){
-                            char dir = d == 1 ? '5' : '3';
-                            edge_alignment p = {parts[2], dir};
+                            edge_alignment p = {parts[2], dir, algn_len};
                             secondaries[read].push_back(p);
                         }
                     }
@@ -256,7 +300,7 @@ find_edge_primaries(const string &bamfile, unordered_map<string, uint> &chrom_le
                 line.clear();
                 continue;
             }
-            if (parts.front()[0] == '@' || secondaries.count(parts[0]) == 0 || is_not_primary(parts) || is_unmapped(parts)){
+            if (parts.front()[0] == '@' || secondaries.count(parts[0]) == 0 || is_not_primary(parts[1]) || is_unmapped(parts[1])){
                 line.clear();
                 parts.clear();
                 continue;
@@ -264,7 +308,8 @@ find_edge_primaries(const string &bamfile, unordered_map<string, uint> &chrom_le
             //
             // primary sequence is at the edge and on a different sequence
             //
-            uint d = at_edge(parts[3], parts[5], chrom_lengths[parts[2]]);
+            string cigar = parts[5];
+            uint d = at_edge(parts[3], cigar, chrom_lengths[parts[2]]);
             if (d != 0){
                 bool same    = false;
                 string read = parts[0];
@@ -275,12 +320,14 @@ find_edge_primaries(const string &bamfile, unordered_map<string, uint> &chrom_le
                     }
                 }
                 if (same == false){
+                    uint length  = get_query_length(cigar, true);
+                    uint aln_len = get_query_length(cigar, false);
                     char dir = d == 1 ? '5' : '3';
-                    ofh << read << '\t' << parts[2] << '_' << dir << '\t';
+                    ofh << read << '\t' << parts[2] << '_' << length << '_' << aln_len << '_' << dir << '\t';
                     int count = 0, total = secondaries[read].size();
                     for (int i = 0; i < total; i++){
                         count++;
-                        ofh << secondaries[read][i].contig << '_' << secondaries[read][i].direction;
+                        ofh << secondaries[read][i].contig << '_' << secondaries[read][i].length << '_' << secondaries[read][i].direction;
                         if (count < total){
                             ofh << ',';
                         }
