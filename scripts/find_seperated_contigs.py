@@ -5,113 +5,73 @@ import argparse
 import os
 import gzip
 from collections import defaultdict
+from enum import Enum
 
 agp           = ''
 seqs_file     = ''
-contig_map    = dict() # contig -> Contig object
+names_file    = ''
+edge_weights  = defaultdict(int) # (end a, end b) -> read count
 agp_map       = dict() # contig -> (chr, idx) # contig to the anchor chr & its index
 contig_names  = dict() # contig -> contig name [OPTIONAL]
 reverse_names = dict() # contig name -> contig [OPTIONAL]
-valid_pairs   = set() 
-names_file    = ''
 nodes         = dict() # contig -> Node
 
-class Contig:
-    def __init__(self, name: str):
-        self.name   = name
-        self.dir_5p = {} # how many reads support
-        self.dir_3p = {} # either the 5' or 3' directions
+class END(Enum):
+    five_prime   = '5' 
+    three_primer = '3' # how they will be represented
 
-        # struct
-        # direction map = {3: {cntg: count, cntg: count}, 5: {cntg: count, cntg: count}}
-        #
-        for d in ['3', '5']:
-            self.dir_3p[d] = defaultdict(int)
-            self.dir_5p[d] = defaultdict(int)
-
+# below is a node struct that will represent an end (i.e., 5' or 3')
+# of a contig. As such, a contig will actually be represented by 2 nodes
+#
 class Node:
-    def __init__(self, name: str, placement: str, index: int):
-        self.name       = name
-        self.ref_seq    = placement
-        self.idx        = index
-        self.right      = list()
-        self.left       = list()
-        self._lefts     = list() # to hold onto equally supported nodes
-        self._rights    = list() # hold onto equally supported nodes
-        self.right_node = None
-        self.right_orie = '' # orientation of right node
-        self.left_node  = None
-        self.left_orie  = '' # orientation of left node
+    def __init__(self, contig: str, end: END, placement: str, index: int):
+        self.contig  = contig
+        self.end     = end
+        self.ref_seq = placement
+        self.idx     = index
+        self.sibling = None
+        self.left    = list()
+        self._lefts  = list() # to hold onto equally supported nodes
 
-    def add_edge(self, node: Node, support: int, self_side: int, other_side: str) -> int:
-        #
-        # other side -> 5' or 3' side of the other contig
-        #
-        
-        if (self_side == 0):
-            self.left.append((node, support, other_side))
-        else:
-            self.right.append((node, support, other_side))
-
+    def add_edge(self, node: Node, support: int) -> int:
+        self.left.append((node, support))
         return 0  
 
     def find_most_supported(self) -> int:
 
         # func() to assign the most supported nodes
-        # as the left & right neighbors
+        # on the left side
 
         score = -float("inf")
         lefts = list()
-        for i in range(len(self.left)):
-            entry = self.left[i]
-            val   = entry[1]
-            if (i == 0):
+
+        for entry in self.left:
+            val = entry[1]
+            if (val > score):
                 score = val
-            if (val == score):
+                lefts = [entry]
+            elif (val == score):
                 lefts.append(entry)
-            elif (val > score):
-                lefts.clear()
-                lefts.append(entry)
-
-        self._lefts.extend(lefts)
-
-        # repeat for right side
-        score  = -float("inf")
-        rights = list()
-        for i in range(len(self.right)):
-            entry = self.right[i]
-            val   = entry[1]
-            if (i == 0):
-                score = val
-            if (val == score):
-                rights.append(entry)
-            elif (val > score):
-                rights.clear()
-                rights.append(entry)
-
-        self._rights.extend(rights)
+        self._lefts = lefts
 
         return 0
     
     def no_left_neighbors(self) -> bool:
         return len(self._lefts) == 0
     
-    def get_lefts(self) -> list[tuple[Node, int, str]]:
+    def get_lefts(self) -> list[tuple[Node, int]]:
         return self._lefts
-    
-    def get_rights(self) -> list[tuple, None, int, str]:
-        return self._rights
     
     def __eq__(self, node: Node) -> bool:
         if (isinstance(node, Node) == False):
             return False
-        return self.name == node.name
+        return self.contig == node.contig
     
     def __hash__(self) -> int:
-        return hash(self.name)
+        return hash((self.contig, self.end))
     
     def __repr__(self) -> str:
-        return f"{self.name}_{self.ref_seq}_{self.idx}"
+        return f"{self.contig}_{self.ref_seq}_{self.idx}"
 
 def set_arguments() -> int:
     """get & set the arguments"""
@@ -142,11 +102,11 @@ def set_arguments() -> int:
 def parse_edges() -> int:
     """fill the contig mapping"""
 
-    global seqs_file, contig_map
+    global seqs_file, edge_weights
 
     #
     # structure
-    # read<tab>primary.conitg<tab>secondary.contigs\n
+    # read<tab>primary.conitg<tab>secondary.contigs_end\n
     #
 
     fh = open(seqs_file, 'r')
@@ -154,18 +114,11 @@ def parse_edges() -> int:
     for line in fh:
         if (len(line) == 0 or line[0] == '#'):
             continue
-        fields       = line.strip().split('\t')
-        pcntg_aln    = fields[1] # primary contig/alignment
-        pcntg, pside = pcntg_aln.split('_')
-        if (pcntg not in contig_map):
-            contig_map[pcntg] = Contig(pcntg)
+        fields    = line.strip().split('\t')
+        pcntg_aln = fields[1] # primary contig/alignment
         for scntg in fields[2].split(','):
-            cntg = scntg[:-2]
-            side = scntg[-1]
-            if (pside == '5'):
-                contig_map[pcntg].dir_5p[side][cntg] += 1
-            else:
-                contig_map[pcntg].dir_3p[side][cntg] += 1
+            key = tuple(sorted((pcntg_aln, scntg)))
+            edge_weights[key] += 1
 
     fh.close()
 
@@ -226,61 +179,37 @@ def load_agp() -> int:
 
     return 0
 
-def find_best_left_neighbor(node: Node) -> tuple[Node, str]:
-    """find the most supported node on the 5' region"""
+def get_node(contig: str, end: END, src: str, idx: int) -> Node:
+    """return the end node and/or create both nodes"""
+
+    global nodes
+
+    key = f"{contig}_{end.value}"
+
+    # do we need to create it?
+    if (key not in nodes):
+        other      = END.three_primer if (end == END.five_prime) else END.five_prime
+        okey       = f"{contig}_{other.value}" # key to the other side (5' vs 3')
+        nodes[key] = Node(contig, end, src, idx)
+        if (okey not in nodes): # creating both sides
+            nodes[okey] = Node(contig, other, src, idx)
+        nodes[key].sibling  = nodes[okey]
+        nodes[okey].sibling = nodes[key]
+
+    return nodes[key]
+
+def find_best_left_neighbor(node: Node) -> Node | None:
+    """find the best & mutally supported node of this end"""
 
     global nodes
 
     left_nodes = node.get_lefts()
 
     for entry in left_nodes:
-        left_node  = entry[0]
-        support    = entry[1]
-        left_orien = entry[2]
-        left_node  = nodes[left_node.name]
-        matched    = False
-        for other_entries in left_node.get_lefts():
-            if (other_entries[0].name == node.name):
-                matched = True
-                break
-        if (matched):
-            return (left_node, left_orien)
-        if (matched == False):
-            for other_entries in left_node.get_rights():
-                if (other_entries[0].name == node.name):
-                    matched = True
-                    break
-        if (matched):
-            return (left_node, left_orien)
-
-    return None  
-
-def find_best_right_neighbor(node: Node) -> tuple[Node, str]:
-    """find the most supported node on the 5' region"""
-
-    global nodes
-
-    right_nodes = node.get_rights()
-
-    for entry in right_nodes:
-        right_node  = entry[0]
-        support     = entry[1]
-        right_orien = entry[2]
-        right_node  = nodes[right_node.name]
-        matched     = False
-        for other_entries in right_node.get_lefts():
-            if (other_entries[0].name == node.name):
-                matched = True
-                break
-        if (matched):
-            return (right_node, right_orien)
-        if (matched == False):
-            for other_entries in right_node.get_rights():
-                if (other_entries[0].name == node.name):
-                    matched = True
-                    break
-        if (matched):
-            return (right_node, right_orien)
+        other_node = entry[0]
+        for other in other_node.get_lefts():
+            if (other[0].contig == node.contig and other[0].end == node.end):
+                return other_node
 
     return None
 
@@ -290,41 +219,50 @@ def create_components() -> int:
     global nodes
 
     # 
-    # step 1: get nodes with no left neighbors
+    # step 1: establish the best partner to every node/end
     #
-    no_lefts = list()
     for node in nodes.values():
-        node.find_most_supported() # establish any neighbors
-        if (node.no_left_neighbors()):
-            no_lefts.append(node)
+        node.find_most_supported()
 
-    if (len(no_lefts) == 0):
+    #
+    # step 2, establish and get the starts
+    # starts: ends with a terminal end
+    #
+    starts = list()
+    for node in nodes.values():
+        if (node.no_left_neighbors()):
+            starts.append(node)
+
+    if (len(starts) == 0):
         print("Found no usuable contigs to start bridging contigs")
         return 1
 
     #
-    # step 2: go through each node from
-    # left to right & verify that they
-    # are the most supported matches
+    # step 3: establish the component
+    # starting from a start node (i.e., terminal node with no left)
+    # cross the internal edge to the sibling node (node from other end of the contig)
+    # and then bridge from sibling to the next node. Orientation is '+'
+    # when we enter at the 5' end and '-' when we enter a 3' end
+    # left to right & verify that they are the most supported matches
     #
     components = list()
-    for node in no_lefts:
-        component = [(node, '')]
+    visited    = set()
+    for node in starts:
+        if (node.contig in visited):
+            continue
+        component = list()
         cur       = node
-        visited   = set()
-        visited.add(node.name)
-        while (True):
-            # now to get best match to the 3' regions
-            next_neighbor = find_best_right_neighbor(cur)
-            if (next_neighbor == None):
-                break
-            next_node  = next_neighbor[0]
-            next_orien = next_neighbor[1]
-            if (next_node.name in visited):
-                break
-            component.append((next_node, next_orien))
-            visited.add(next_node.name)
-            cur        = next_node
+        while (cur != None and cur.contig not in visited):
+            sib    = cur.sibling # internal edge to other end of contig
+            orient = '+' if (cur.end == END.five_prime) else '-'
+            component.append((cur, orient))
+            visited.add(cur.contig)
+            visited.add(sib.contig)
+            next_node = find_best_left_neighbor(sib)
+            if (next_node == None or next_node.contig in visited):
+                cur = None
+            else:
+                cur = next_node
         components.append(component)
 
     fh = open("Connected.contigs.tsv", 'w')
@@ -348,70 +286,46 @@ def create_components() -> int:
 def create_edges_and_write_support() -> int:
     """a function to write the number of briding alignments"""
 
-    global agp_map, contig_map, valid_pairs, reverse_names, nodes
+    global agp_map, edge_weights, reverse_names, nodes
 
-    ofh   = open("Separated_contigs.tsv", 'w')
-    check = len(reverse_names) > 0
-    dirs  = ['5', '3']
+    ofh = open("Separated_contigs.tsv", 'w')
     ofh.write("#Contig.A\tChr.A\tIdx.A\tSide.A\tConitg.B\tChr.B\tIdx.B\tSide.B\tRead.Support\n")
 
-    for contig in contig_map.values():
-        source, idx  = agp_map[contig.name]
-        for d in dirs:
-            five_primes  = [(cntg, count) for cntg, count in contig.dir_5p[d].items()]
-            three_primes = [(cntg, count) for cntg, count in contig.dir_3p[d].items()]
-            five_primes.sort(key = lambda x : x[1], reverse=True)
-            three_primes.sort(key = lambda x : x[1], reverse=True)
+    for (key1, key2), weight in edge_weights.items():
+        contig1, edge1 = key1.rsplit('_', 1)
+        contig2, edge2 = key2.rsplit('_', 1)
+        agpKey1        = agp_map.get(contig1) # tuple (ref seq, index)
+        agpKey2        = agp_map.get(contig2)
+
+        # skip contigs already neighboring in the currently assembly
+        if (agpKey1 != None and agpKey2 != None):
+            if (agpKey1[0] == agpKey2[0] and abs(agpKey1[1] - agpKey2[1]) <= 1):
+                continue
+
+        # write out this information
+        if (agpKey1 != None):
+            src1 = agpKey1[0]
+            idx1 = agpKey1[1]
+        else:
+            src1 = "NA"
+            idx1 = -1
         
-            for pair in five_primes:
-                left_cntg = pair[0]
-                cntg_cnt  = pair[1] # number of reads supporting this match
-                cntg_src, cntg_idx = agp_map[left_cntg]
-                if (cntg_src != source or abs(idx - cntg_idx) > 1):
-                    name1 = contig.name
-                    name2 = left_cntg
-                    # check if we need to update the contig names
-                    if (check):
-                        if (name1 in reverse_names):
-                            name1 = reverse_names[name1]
-                        if (name2 in reverse_names):
-                            name2 = reverse_names[name2]
-                    # create nodes to construct components later
-                    if (name1 not in nodes):
-                        nodes[name1] = Node(name1, source, idx)
-                    if (name2 not in nodes):
-                        nodes[name2] = Node(name2, cntg_src, cntg_idx)
-                    outline = f"{name1}\t{source}\t{idx}\t5\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
-                    ofh.write(outline)
+        if (agpKey2 != None):
+            src2 = agpKey2[0]
+            idx2 = agpKey2[1]
+        else:
+            src2 = "NA"
+            idx2 = -1
 
-                    node1 = nodes[name1]
-                    node2 = nodes[name2]
-                    node1.add_edge(node2, cntg_cnt, 0, d) # add to left
-            
-            for pair in three_primes:
-                right_cntg = pair[0]
-                cntg_cnt   = pair[1] # number of reads supporting this match
-                cntg_src, cntg_idx = agp_map[right_cntg]
-                if (cntg_src != source or abs(idx - cntg_idx) > 1):
-                    name1 = contig.name
-                    name2 = right_cntg
-                    # check if we need to update the contig names
-                    if (check):
-                        if (name1 in reverse_names):
-                            name1 = reverse_names[name1]
-                        if (name2 in reverse_names):
-                            name2 = reverse_names[name2]
-                    # create nodes to construct components later
-                    if (name1 not in nodes):
-                        nodes[name1] = Node(name1, source, idx)
-                    if (name2 not in nodes):
-                        nodes[name2] = Node(name2, cntg_src, cntg_idx)
-                    outline = f"{name1}\t{source}\t{idx}\t3\t{name2}\t{cntg_src}\t{cntg_idx}\t{d}\t{cntg_cnt}\n"
-                    ofh.write(outline)
+        # write out the record
+        ofh.write(f"{contig1}\t{src1}\t{idx1}\t{edge1}\t{contig2}\t{src2}\t{idx2}\t{edge2}\t{weight}\n")
 
-                    node1 = nodes[name1]
-                    node2 = nodes[name2]
-                    node1.add_edge(node2, cntg_cnt, 1, d) # add to right
+        node1 = get_node(contig1, END(edge1), src1, idx1)
+        node2 = get_node(contig2, END(edge2), src2, idx2)
+
+        # create the edges
+        node1.add_edge(node2, weight)
+        node2.add_edge(node1, weight)
 
     ofh.close()
 
