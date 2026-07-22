@@ -4,7 +4,6 @@ import argparse
 import os
 import gzip
 import sys
-import textwrap
 from enum import Enum
 
 fasta      = ''
@@ -12,25 +11,8 @@ cfile      = ''
 components = list()
 records    = dict()
 
-
 # create once
-rc_dict = {'A':'T',
-           'T':'A',
-           'C':'G',
-           'G':'C',
-           'N':'N',
-           '-':'-',
-           'K':'M', # G||T : C||A
-           'M':'K', # C||A : G||T
-           'W':'W', # A||T : T||A
-           'S':'S', # G||C : C||G
-           'R':'Y', # A||G : T||C
-           'Y':'R', # T||C : A||G
-           'B':'V', # C||G||T : A||C||G
-           'V':'B', # A||C||G : C||G||T
-           'D':'H', # A||G||T : T||C||A
-           'H':'D'}
-
+_DNA_COMPLEMENT = str.maketrans("ATCGatcgNn", "TAGCtagcNn")
 class Orientation(Enum):
     reverse = 0
     forward = 1
@@ -166,39 +148,28 @@ def load_fasta() -> int:
 
     return 0
 
-def reverse_seq(seq: str) -> str:
-    """return the reverse complement of the sequence"""
-    
-    global rc_dict
-
-    tmp = list()
-
-    for nuc in seq[::-1]:
-        tmp.append(rc_dict[nuc.upper()])
-
-    return ''.join(tmp)
-
 def write_components() -> int:
     """write each component as a sequence record"""
 
-    global records, components
+    global records, components, _DNA_COMPLEMENT
 
     fh  = open("components.fa", 'w')
     gap = 'N' * 100
 
     for component in components:
         seq   = list()
-        _id   = '>' + component.id + '\n'
+        _id   = ">component_" + component.id + '\n'
         comps = component.get_components()
         for comp in comps:
             target = comp[0]
             oren   = comp[1]
             sequen = records[target].seq
-            sequen = sequen if (oren == Orientation.forward) else reverse_seq(sequen)
-            seq.append(sequen + gap)
-        sequence = f'{gap}'.join(seq)
+            sequen = sequen if (oren == Orientation.forward) else sequen.translate(_DNA_COMPLEMENT)[::-1]
+            seq.append(sequen)
+        sequence = gap.join(seq)
+        record   = '\n'.join(sequence[i:i+60] for i in range(0, len(sequence), 60))
         fh.write(_id)
-        fh.write(textwrap.fill(sequence, width=60))
+        fh.write(record)
         fh.write('\n')
 
     fh.close()
